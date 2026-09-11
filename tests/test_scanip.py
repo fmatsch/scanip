@@ -75,6 +75,40 @@ class TestArpParsing(unittest.TestCase):
         self.assertEqual(table["192.168.1.20"], "00:11:32:AA:BB:CC")
 
 
+class TestZwischenspeicher(unittest.TestCase):
+    """Schnittstellen werden gepuffert - unter Windows sonst ein PowerShell-Start
+    pro Aufruf."""
+
+    def setUp(self):
+        netinfo.clear_cache()
+        self.aufrufe = 0
+
+    def _zaehlend(self):
+        self.aufrufe += 1
+        return ["ergebnis"]
+
+    def test_zweiter_aufruf_kommt_aus_dem_speicher(self):
+        for _ in range(3):
+            self.assertEqual(netinfo._cached("test", self._zaehlend), ["ergebnis"])
+        self.assertEqual(self.aufrufe, 1)
+
+    def test_clear_cache_erzwingt_neuermittlung(self):
+        netinfo._cached("test", self._zaehlend)
+        netinfo.clear_cache()
+        netinfo._cached("test", self._zaehlend)
+        self.assertEqual(self.aufrufe, 2)
+
+    def test_abgelaufener_eintrag_wird_erneuert(self):
+        netinfo._cached("test", self._zaehlend, ttl=0.0)
+        netinfo._cached("test", self._zaehlend, ttl=0.0)
+        self.assertEqual(self.aufrufe, 2)
+
+    def test_schnittstellen_liefern_gleiches_ergebnis(self):
+        erste = [str(i) for i in netinfo.interfaces()]
+        zweite = [str(i) for i in netinfo.interfaces()]
+        self.assertEqual(erste, zweite)
+
+
 class TestTargets(unittest.TestCase):
     def test_netz(self):
         self.assertEqual(len(expand_targets(["192.168.1.0/24"])), 254)

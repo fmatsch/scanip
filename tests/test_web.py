@@ -96,6 +96,8 @@ class TestServer(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from scanip import netinfo
+        netinfo.interfaces()          # Zwischenspeicher füllen (unter Windows langsam)
         cls.state = web.ScanState()
         cls.token = "test-token-1234567890"
         handler = type("TestHandler", (web.Handler,),
@@ -121,7 +123,7 @@ class TestServer(unittest.TestCase):
         request = urllib.request.Request(self.url(path, token), method=method,
                                          data=data)
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=30) as response:
                 return response.status, response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode("utf-8")

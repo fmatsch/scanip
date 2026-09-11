@@ -288,6 +288,7 @@ def run_web(port: int = 0, open_browser: bool = True,
     """Startet die Browser-Oberfläche. Liefert den Exitcode."""
     state = ScanState()
     token = secrets.token_urlsafe(24)
+    netinfo.interfaces()          # füllt den Zwischenspeicher vor dem ersten Aufruf
 
     handler = type("BoundHandler", (Handler,), {"state": state, "token": token})
     server = ThreadingHTTPServer((host, port), handler)

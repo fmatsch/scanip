@@ -321,7 +321,7 @@ sonst warnt SmartScreen.
 python3 -m unittest discover -s tests -v
 ```
 
-67 Tests, komplett offline (unter einer Sekunde) — Protokollkodierung (DNS,
+71 Tests, komplett offline (unter einer Sekunde) — Protokollkodierung (DNS,
 NetBIOS, SNMP/BER), ARP-Auswertung für Windows- und macOS-Format, Zielexpansion
 samt Größengrenze, Kategorisierung anhand von 15 Geräteprofilen, alle
 Ausgabeformate sowie Routen und Token-Absicherung des Webservers.

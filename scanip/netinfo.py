@@ -10,6 +10,8 @@ import socket
 import subprocess
 from typing import Dict, List, Optional
 
+import time
+
 SYSTEM = platform.system()
 IS_WINDOWS = SYSTEM == "Windows"
 IS_MAC = SYSTEM == "Darwin"
@@ -31,6 +33,35 @@ def run(cmd: List[str], timeout: float = 8.0) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
     return res.stdout.decode("utf-8", "replace")
+
+
+# --------------------------------------------------------------------------- #
+# Zwischenspeicher
+#
+# Die Abfrage der Schnittstellen startet unter Windows PowerShell - das dauert
+# auf langsamen Systemen mehrere Sekunden. Da sich Schnittstellen und Gateway
+# während eines Programmlaufs praktisch nie ändern, wird das Ergebnis kurz
+# zwischengespeichert. Die ARP-Tabelle bleibt bewusst ungepuffert, sie ändert
+# sich während eines Scans laufend.
+# --------------------------------------------------------------------------- #
+
+CACHE_TTL = 30.0
+_cache: Dict[str, tuple] = {}
+
+
+def _cached(key: str, producer, ttl: float = CACHE_TTL):
+    now = time.monotonic()
+    entry = _cache.get(key)
+    if entry is not None and now - entry[0] < ttl:
+        return entry[1]
+    value = producer()
+    _cache[key] = (now, value)
+    return value
+
+
+def clear_cache() -> None:
+    """Erzwingt die Neuermittlung von Schnittstellen und Gateway."""
+    _cache.clear()
 
 
 def normalize_mac(raw: str) -> Optional[str]:
@@ -159,8 +190,7 @@ def _interfaces_unix() -> List[Interface]:
     return result
 
 
-def interfaces() -> List[Interface]:
-    """Alle aktiven IPv4-Interfaces mit Netzmaske."""
+def _detect_interfaces() -> List[Interface]:
     try:
         found = _interfaces_windows() if IS_WINDOWS else _interfaces_unix()
     except Exception:
@@ -170,6 +200,11 @@ def interfaces() -> List[Interface]:
         if ip:
             found = [Interface("?", ip, 24)]
     return found
+
+
+def interfaces() -> List[Interface]:
+    """Alle aktiven IPv4-Schnittstellen mit Netzmaske (kurz zwischengespeichert)."""
+    return _cached("interfaces", _detect_interfaces)
 
 
 def default_networks() -> List[ipaddress.IPv4Network]:
@@ -199,7 +234,11 @@ def default_networks() -> List[ipaddress.IPv4Network]:
 # --------------------------------------------------------------------------- #
 
 def default_gateways() -> List[str]:
-    """IP-Adressen der Standardgateways (für die Router-Erkennung)."""
+    """IP-Adressen der Standardgateways (kurz zwischengespeichert)."""
+    return _cached("gateways", _detect_gateways)
+
+
+def _detect_gateways() -> List[str]:
     gws: List[str] = []
     if IS_WINDOWS:
         out = run([
