@@ -48,9 +48,18 @@ def _truncate(text: str, width: int) -> str:
 
 
 def text_table(devices: Sequence[Device], with_services: bool = False,
-               max_width: int = 200, show_why: bool = False) -> str:
-    """ASCII-Tabelle (funktioniert in jeder Konsole)."""
+               max_width: int = 200, show_why: bool = False,
+               show_notes: Optional[bool] = None) -> str:
+    """ASCII-Tabelle (funktioniert in jeder Konsole).
+
+    Die Notizspalte erscheint automatisch, sobald mindestens ein Gerät eine
+    Notiz hat; mit show_notes lässt sie sich erzwingen oder unterdrücken.
+    """
     columns = list(COLUMNS)
+    if show_notes is None:
+        show_notes = any(getattr(d, "note", "") for d in devices)
+    if show_notes:
+        columns.append(("note", "Notiz"))
     if show_why:
         columns.append(("why", "Begründung"))
 
@@ -60,6 +69,8 @@ def text_table(devices: Sequence[Device], with_services: bool = False,
         for key, _title in columns:
             if key == "why":
                 row.append("; ".join(device.reasons[:2]) or "-")
+            elif key == "note":
+                row.append(getattr(device, "note", "") or "-")
             else:
                 row.append(_cell(device, key, with_services))
         rows.append(row)
@@ -69,7 +80,8 @@ def text_table(devices: Sequence[Device], with_services: bool = False,
               if rows else _visible_len(headers[i]) for i in range(len(columns))]
 
     # Zu breite Tabelle: die Port-/Begründungsspalte zuerst kürzen
-    limits = {"ports": 46, "why": 40, "vendor": 26, "hostname": 30, "category": 22}
+    limits = {"ports": 46, "why": 40, "vendor": 26, "hostname": 30,
+              "category": 22, "note": 34}
     for index, (key, _title) in enumerate(columns):
         if key in limits:
             widths[index] = min(widths[index], limits[key])
@@ -81,7 +93,7 @@ def text_table(devices: Sequence[Device], with_services: bool = False,
     def total() -> int:
         return sum(widths) + separator * (len(widths) - 1)
 
-    shrinkable = {"why", "ports", "vendor", "hostname", "category", "mac"}
+    shrinkable = {"why", "ports", "vendor", "hostname", "category", "mac", "note"}
     while total() > max_width:
         candidates = [i for i, (key, _t) in enumerate(columns)
                       if key in shrinkable and widths[i] > minimum]
@@ -131,8 +143,8 @@ def to_csv(devices: Sequence[Device], delimiter: str = ";") -> str:
     out = io.StringIO()
     writer = csv.writer(out, delimiter=delimiter, lineterminator="\n")
     writer.writerow(["IP-Adresse", "MAC-Adresse", "Hersteller", "Gerätename",
-                     "Kategorie", "Sicherheit", "Offene Ports", "Dienste",
-                     "Begründung", "Gateway"])
+                     "Kategorie", "Sicherheit", "Notiz", "Offene Ports",
+                     "Dienste", "Begründung", "Gateway"])
     for device in devices:
         writer.writerow([
             device.ip,
@@ -141,6 +153,7 @@ def to_csv(devices: Sequence[Device], delimiter: str = ";") -> str:
             device.hostname or "",
             device.category,
             device.confidence,
+            getattr(device, "note", "") or "",
             " ".join(str(p) for p in device.open_ports),
             " ".join("%d/%s" % (p, service_name(p)) for p in device.open_ports
                      if service_name(p)),
@@ -190,6 +203,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   .cat { white-space:nowrap; font-weight:600; }
   .low { font-weight:400; color:var(--muted); }
   .why { color:var(--muted); font-size:12px; max-width:320px; }
+  .note { max-width:220px; white-space:pre-wrap; }
   /* Auf schmalen Fenstern die Begründungsspalte ausblenden, damit die
      Tabelle ohne Querscrollen lesbar bleibt und die Zeilen flach werden. */
   @media (max-width: 950px) {
@@ -251,7 +265,7 @@ def to_html(devices: Sequence[Device], meta: Optional[Dict] = None) -> str:
         counts[device.category] = counts.get(device.category, 0) + 1
 
     titles = ["IP-Adresse", "MAC-Adresse", "Hersteller", "Gerätename",
-              "Kategorie", "Offene Ports", "Begründung"]
+              "Kategorie", "Notiz", "Offene Ports", "Begründung"]
     head = "".join("<th%s>%s</th>" % (" class='why-head'" if title == "Begründung"
                                       else "", html.escape(title))
                    for title in titles)
@@ -273,7 +287,8 @@ def to_html(devices: Sequence[Device], meta: Optional[Dict] = None) -> str:
             "<tr>"
             "<td data-sort='%s'><code>%s</code></td>"
             "<td><code>%s</code></td><td>%s</td><td>%s</td>"
-            "<td class='%s'>%s</td><td class='ports'>%s</td><td class='why'>%s</td>"
+            "<td class='%s'>%s</td><td class='note'>%s</td>"
+            "<td class='ports'>%s</td><td class='why'>%s</td>"
             "</tr>" % (
                 sort_ip, html.escape(device.ip),
                 html.escape(device.mac or "-"),
@@ -281,6 +296,7 @@ def to_html(devices: Sequence[Device], meta: Optional[Dict] = None) -> str:
                 html.escape(name or "-"),
                 category_class,
                 html.escape(device.category),
+                html.escape(getattr(device, "note", "") or "-"),
                 ports_html,
                 html.escape("; ".join(device.reasons[:3]) or "-"),
             ))
@@ -310,7 +326,8 @@ def device_haystack(device: Device) -> str:
     parts = [device.ip, device.mac or "", device.vendor or "",
              device.hostname or "", device.category,
              " ".join(str(p) for p in device.open_ports),
-             " ".join(service_name(p) for p in device.open_ports)]
+             " ".join(service_name(p) for p in device.open_ports),
+             getattr(device, "note", "") or ""]
     return " ".join(parts).lower()
 
 

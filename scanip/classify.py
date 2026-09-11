@@ -64,6 +64,7 @@ PORT_RULES: Dict[int, List[Tuple[str, int, str]]] = {
     5357: [(WIN_PC, 20, "Port 5357 (WSD)")],
     8172: [(SERVER, 25, "Port 8172 (IIS-Verwaltung)")],
     3283: [(MAC_PC, 40, "Port 3283 (Apple Remote Desktop)")],
+    5900: [(MAC_PC, 10, "Port 5900 (Bildschirmfreigabe)")],
     5009: [(MAC_PC, 25, "Port 5009 (AirPort-Verwaltung)")],
     548: [(MAC_PC, 25, "Port 548 (AFP)"), (NAS, 20, "Port 548 (AFP)")],
     # lockdownd läuft auf iPhone/iPad, aber auch auf Apple TV und HomePod
@@ -163,14 +164,55 @@ TEXT_RULES: List[Tuple[str, str, int, str]] = [
 # mDNS-Dienst -> (Kategorie, Punkte)
 MDNS_SERVICE_RULES: List[Tuple[str, str, int, str]] = [
     (r"_ipp\._tcp|_ipps\._tcp|_printer\._tcp|_pdl-datastream\._tcp|_scanner\._tcp|_uscan", PRINTER, 50, "Bonjour-Druckdienst"),
-    (r"_airplay\._tcp|_raop\._tcp|_spotify-connect|_googlecast|_sonos|_sleep-proxy", MEDIA, 40, "Bonjour-Mediendienst"),
-    (r"_apple-mobdev|_touch-able|_apple-pairable", MOBILE, 45, "iOS-Gerätedienst"),
-    (r"_smb\._tcp|_rfb\._tcp|_net-assistant|_odisk", MAC_PC, 25, "Mac-Freigabedienst"),
+    (r"_spotify-connect|_googlecast|_sonos", MEDIA, 40, "Bonjour-Mediendienst"),
+    # AirPlay allein sagt wenig: macOS aktiviert den AirPlay-Empfang standardmäßig,
+    # ein Mac bietet dieselben Dienste an wie ein Apple TV.
+    (r"_airplay\._tcp|_raop\._tcp|_sleep-proxy", MEDIA, 18, "AirPlay-Dienst"),
+    (r"_touch-able|_appletv|_mediaremotetv", MEDIA, 45, "Apple-TV-Fernbedienungsdienst"),
+    (r"_apple-mobdev|_apple-pairable", MOBILE, 45, "iOS-Gerätedienst"),
+    (r"_smb\._tcp|_rfb\._tcp|_net-assistant|_odisk|_adisk|_workstation", MAC_PC, 35, "Mac-Freigabedienst"),
     (r"_afpovertcp|_adisk|_smb\._tcp|_nfs\._tcp", NAS, 25, "Bonjour-Dateifreigabe"),
     (r"_workstation\._tcp|_ssh\._tcp|_sftp-ssh", NIX_PC, 20, "Bonjour-Workstation"),
     (r"_hap\._tcp|_homekit|_matter|_esphomelib|_shelly", IOT, 45, "HomeKit/IoT-Dienst"),
     (r"_sleep-proxy|_device-info", None, 0, ""),
 ]
+
+# Apple veröffentlicht per Bonjour einen '_device-info'-TXT-Record mit der
+# Modellkennung; 'osxvers' gibt es ausschließlich unter macOS.
+BOARD_ID = re.compile(r"^[A-Z]\d+[a-z]?AP$")       # z.B. J42dAP (Apple TV, HomePod)
+
+APPLE_MODEL_RULES: List[Tuple[str, str, int, str]] = [
+    (r"^(mac|imac)", MAC_PC, 90, "Modellkennung: Mac"),
+    (r"^appletv", MEDIA, 90, "Modellkennung: Apple TV"),
+    (r"^(audioaccessory|homepod)", MEDIA, 90, "Modellkennung: HomePod"),
+    (r"^(iphone|ipod)", MOBILE, 90, "Modellkennung: iPhone"),
+    (r"^ipad", MOBILE, 90, "Modellkennung: iPad"),
+    (r"^watch", MOBILE, 80, "Modellkennung: Apple Watch"),
+]
+
+
+def apple_model_hints(model: Optional[str], osxvers: Optional[str],
+                      services: str = "") -> List[Tuple[str, int, str]]:
+    """Wertet die Apple-Modellkennung aus. Liefert (Kategorie, Punkte, Grund)."""
+    hints: List[Tuple[str, int, str]] = []
+    if osxvers:
+        # Nur macOS veröffentlicht dieses Feld - eindeutiger Mac.
+        hints.append((MAC_PC, 95, "macOS-Kennung (osxvers) per Bonjour"))
+    if not model:
+        return hints
+    for pattern, category, points, reason in APPLE_MODEL_RULES:
+        if re.search(pattern, model, re.I):
+            hints.append((category, points, "%s (%s)" % (reason, model)))
+            return hints
+    if BOARD_ID.match(model) and not osxvers:
+        # Interne Platinenkennung ohne osxvers: ein eingebettetes Apple-Gerät,
+        # also kein Mac. Mit AirPlay ist es ein Apple TV oder HomePod.
+        if re.search(r"_airplay|_raop", services, re.I):
+            hints.append((MEDIA, 55, "Apple-Gerätekennung %s mit AirPlay" % model))
+        else:
+            hints.append((MOBILE, 30, "Apple-Gerätekennung %s" % model))
+    return hints
+
 
 CONFIDENCE_HIGH = "hoch"
 CONFIDENCE_MEDIUM = "mittel"
@@ -220,6 +262,10 @@ def classify(open_ports: Sequence[int],
     # 2) MAC-Hersteller
     if vendor_hint:
         category = HINT_TO_CATEGORY.get(vendor_hint)
+        if category == NIX_PC and vendor and "apple" in vendor.lower():
+            # Der Hinweis "computer" steht allgemein für Unix - bei Apple-Hardware
+            # ist damit macOS gemeint.
+            category = MAC_PC
         _add(scores, reasons, category, 35, "MAC-Hersteller: %s" % (vendor or vendor_hint))
     if vendor:
         low = vendor.lower()
@@ -253,6 +299,16 @@ def classify(open_ports: Sequence[int],
             if category and re.search(pattern, services, re.I):
                 _add(scores, reasons, category, points, reason)
 
+    # 4b) Apple-Modellkennung - das stärkste Merkmal bei Apple-Geräten
+    model = evidence.get("mdns_model")
+    osxvers = evidence.get("mdns_osxvers")
+    for category, points, reason in apple_model_hints(model, osxvers, services):
+        _add(scores, reasons, category, points, reason)
+    if model and not osxvers and not re.search(r"^(mac|imac)", model, re.I):
+        # Ein Apple-Gerät mit Modellkennung, aber ohne macOS-Feld, ist kein Mac.
+        if MAC_PC in scores:
+            scores[MAC_PC] = max(0, scores[MAC_PC] - 60)
+
     # 5) Protokollspezifische Zusatzindizien
     if evidence.get("netbios_name"):
         _add(scores, reasons, WIN_PC, 25, "NetBIOS-Name vorhanden")
@@ -278,6 +334,9 @@ def classify(open_ports: Sequence[int],
         scores[PRINTER] = max(0, scores[PRINTER] - 30)
     if WIN_PC in scores and 9100 in ports and not (ports & {135, 3389, 5985}):
         scores[WIN_PC] = max(0, scores[WIN_PC] - 20)
+    if MAC_PC in scores and 62078 in ports and not evidence.get("mdns_osxvers"):
+        # lockdownd läuft auf iOS und tvOS, nicht unter macOS
+        scores[MAC_PC] = max(0, scores[MAC_PC] - 35)
     if MOBILE in scores and ports & {445, 135, 3389, 9100, 631}:
         scores[MOBILE] = max(0, scores[MOBILE] - 40)
     if ROUTER in scores and not is_gateway and (ports & {9100, 515, 554, 5060}):
@@ -337,7 +396,7 @@ def clean_name(value: Optional[str], ip: Optional[str] = None) -> Optional[str]:
 
 def pick_display_name(names: Dict[str, str], ip: Optional[str] = None) -> Optional[str]:
     """Wählt aus allen gefundenen Namensquellen den aussagekräftigsten."""
-    priority = ("upnp_name", "mdns_name", "netbios_name", "snmp_name",
+    priority = ("mdns_instance", "upnp_name", "mdns_name", "netbios_name", "snmp_name",
                 "dns_name", "ssdp_name", "tls_cn", "title")
     for key in priority:
         value = clean_name(names.get(key), ip)

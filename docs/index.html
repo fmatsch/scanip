@@ -122,24 +122,24 @@
     <table>
       <thead><tr>
         <th>IP-Adresse</th><th>MAC-Adresse</th><th>Hersteller</th>
-        <th>Gerätename</th><th>Kategorie</th><th>Offene Ports</th>
+        <th>Gerätename</th><th>Kategorie</th><th>Notiz</th><th>Offene Ports</th>
       </tr></thead>
       <tbody>
         <tr><td><code>192.168.1.1</code></td><td><code>78:20:51:AA:BB:01</code></td>
             <td>TP-Link</td><td>Archer AX53</td><td>Router / Gateway</td>
-            <td>53, 80, 443</td></tr>
+            <td>Zugang im Safe</td><td>53, 80, 443</td></tr>
         <tr><td><code>192.168.1.50</code></td><td><code>3C:2A:F4:11:22:33</code></td>
             <td>Brother</td><td>BRN3C2AF4</td><td>Drucker / MFP</td>
-            <td>515, 631, 9100</td></tr>
+            <td>Buchhaltung, 2. OG</td><td>515, 631, 9100</td></tr>
         <tr><td><code>192.168.1.68</code></td><td><code>C8:69:CD:AA:BB:02</code></td>
             <td>Apple</td><td>Apple-TV-Wohnzimmer</td><td>Smart-TV / Media</td>
-            <td>7000, 62078</td></tr>
+            <td>&ndash;</td><td>7000, 62078</td></tr>
         <tr><td><code>192.168.1.152</code></td><td><code>28:2E:89:AA:BB:03</code></td>
             <td>Intel</td><td>PC-BUERO-01</td><td>Computer (Windows)</td>
-            <td>135, 139, 445</td></tr>
+            <td>Arbeitsplatz Empfang</td><td>135, 139, 445</td></tr>
         <tr><td><code>192.168.1.20</code></td><td><code>00:11:32:AA:BB:CC</code></td>
             <td>Synology</td><td>DiskStation</td><td>NAS / Storage</td>
-            <td>445, 2049, 5001</td></tr>
+            <td>Backup täglich 3 Uhr</td><td>445, 2049, 5001</td></tr>
       </tbody>
     </table>
   </div>
@@ -163,12 +163,15 @@
     <div class="card"><h3>Ohne Sonderrechte</h3>
       <p>TCP-Connect-Scan statt Rohsockets: keine Administrator- oder
          Root-Rechte, keine Treiberinstallation.</p></div>
+    <div class="card"><h3>Eigene Notizen</h3>
+      <p>Zu jedem Gerät eine Anmerkung hinterlegen – gespeichert über die
+         MAC-Adresse und damit auch dann erhalten, wenn sich die IP ändert.</p></div>
     <div class="card"><h3>Export</h3>
       <p>HTML-Report zum Sortieren und Filtern, CSV für Excel und JSON zur
          Weiterverarbeitung.</p></div>
     <div class="card"><h3>Nur Standardbibliothek</h3>
       <p>Keine externen Pakete, keine Telemetrie, keine Netzwerkverbindung nach
-         außen. Rund 4.800 Zeilen Python mit 71 Tests.</p></div>
+         außen. Rund 5.300 Zeilen Python mit 102 Tests.</p></div>
   </div>
 </section>
 

@@ -15,6 +15,7 @@ Netzwerk-Scanner für **Windows, macOS und Linux**. Zeigt für jedes Gerät im N
 | **MAC-Adresse** | aus der ARP-Tabelle bzw. per NetBIOS |
 | **Gerätekategorie** | Drucker, Computer, Switch, Telefon, Kamera, NAS, … (heuristisch, mit Begründung) |
 | **Gerätename** | aus DNS, mDNS/Bonjour, NetBIOS, SNMP und UPnP |
+| **Notiz** | eigene Anmerkung je Gerät – bleibt über Scans und Neustarts hinweg erhalten |
 
 Ohne Fremdbibliotheken (nur Python-Standardbibliothek), **ohne Administrator- oder
 Root-Rechte**. Drei Bedienwege: Kommandozeile, Browser-Oberfläche und Tk-Fenster.
@@ -121,6 +122,10 @@ python3 -m scanip -p all --thorough      # alle 65535 Ports (dauert lange)
 python3 -m scanip --why                  # Begründung der Kategorie anzeigen
 python3 -m scanip --services             # Portnamen mit anzeigen
 
+python3 -m scanip --note 192.168.1.50 "Drucker Buchhaltung, 2. OG"
+python3 -m scanip --note AA:BB:CC:DD:EE:FF ""     # Notiz löschen
+python3 -m scanip --list-notes           # gespeicherte Notizen anzeigen
+
 python3 -m scanip -o bericht.html        # HTML-Report (sortierbar, filterbar)
 python3 -m scanip -o geraete.csv         # CSV für Excel (Semikolon-getrennt)
 python3 -m scanip -o scan.json           # JSON für Weiterverarbeitung
@@ -140,6 +145,8 @@ python3 -m scanip --update-oui           # Herstellerliste vervollständigen
 | `--fast` | nur Discovery-Ports, ohne SNMP/NetBIOS/Banner |
 | `--thorough` | längere Timeouts, Ports 1–10000 |
 | `--why` | Spalte mit der Begründung der Kategorie |
+| `--note GERÄT TEXT` | Notiz setzen (GERÄT = IP oder MAC); leerer Text löscht sie |
+| `--notes` / `--list-notes` | Notizspalte erzwingen / alle Notizen auflisten |
 | `--timeout` | TCP-Timeout pro Port (Standard 0,6 s) |
 | `--workers` | parallele Hosts bei der Suche (Standard 128) |
 | `--snmp-community` | SNMP-Community (Standard `public`) |
@@ -150,6 +157,33 @@ python3 -m scanip --update-oui           # Herstellerliste vervollständigen
 
 Maximal 65.536 Adressen pro Scan. Größere Angaben wie `10.0.0.0/8` werden sofort
 abgelehnt, statt Millionen Adressen aufzuzählen.
+
+---
+
+## Notizen zu Geräten
+
+Zu jedem Gerät lässt sich eine eigene Anmerkung hinterlegen – etwa der Standort,
+der Ansprechpartner oder wofür es zuständig ist. Notizen bleiben über
+Scanvorgänge, Programmneustarts und alle drei Bedienwege hinweg erhalten.
+
+* **Browser-Oberfläche:** in die Notizspalte klicken, tippen, Eingabetaste.
+  Umschalt+Eingabe erzeugt eine neue Zeile, Escape verwirft.
+* **Tk-Fenster:** Doppelklick auf eine Zeile, Notizfeld unten im Detailfenster.
+* **Kommandozeile:** `python3 -m scanip --note 192.168.1.50 "Drucker Buchhaltung"`
+
+Als Schlüssel dient die **MAC-Adresse**, nicht die IP – ein Gerät behält seine
+Notiz also auch, wenn der DHCP-Server ihm beim nächsten Mal eine andere Adresse
+gibt. Nur bei Geräten ohne sichtbare MAC (etwa hinter einem Router) wird die IP
+verwendet. Notizen erscheinen zusätzlich in allen Exportformaten und werden vom
+Freitextfilter durchsucht.
+
+Gespeichert wird in einer JSON-Datei:
+
+| System | Ort |
+|---|---|
+| Windows | `%APPDATA%\scanip\notes.json` |
+| macOS | `~/Library/Application Support/scanip/notes.json` |
+| Linux | `~/.local/share/scanip/notes.json` |
 
 ---
 
@@ -182,6 +216,12 @@ Windows-Rechner mit Druckerfreigabe, kein Drucker.
 
 Weil mehrere Quellen zusammenwirken, bleibt die Erkennung robust: Ein Apple TV mit
 schlafendem AirPlay-Dienst wird über seinen mDNS-Namen trotzdem richtig eingeordnet.
+
+Bei Apple-Geräten kommt ein Sonderfall hinzu: macOS aktiviert den AirPlay-Empfang
+standardmäßig, wodurch ein Mac dieselben Ports und Bonjour-Dienste anbietet wie ein
+Apple TV. scanip fragt deshalb Apples `_device-info`-Eintrag ab, der die exakte
+Modellkennung enthält (`Mac17,5` gegenüber `J42dAP`) und bei Macs zusätzlich das
+Feld `osxvers` – das nur macOS veröffentlicht.
 
 `--why`, der Klick auf eine Zeile in der Browser-Oberfläche bzw. der Doppelklick im
 Tk-Fenster zeigen, welche Indizien zur Einordnung geführt haben.
@@ -308,6 +348,7 @@ sonst warnt SmartScreen.
 | `scanip/oui.py` | MAC-Herstellerdatenbank |
 | `scanip/classify.py` | Punktesystem für die Gerätekategorie |
 | `scanip/scanner.py` | Ablaufsteuerung, Parallelisierung |
+| `scanip/notes.py` | dauerhafte Gerätenotizen |
 | `scanip/report.py` | Texttabelle, CSV, JSON, HTML-Report |
 | `scanip/cli.py` | Kommandozeile |
 | `scanip/web.py` | Browser-Oberfläche (Server + Seite) |
@@ -321,9 +362,10 @@ sonst warnt SmartScreen.
 python3 -m unittest discover -s tests -v
 ```
 
-71 Tests, komplett offline (unter einer Sekunde) — Protokollkodierung (DNS,
-NetBIOS, SNMP/BER), ARP-Auswertung für Windows- und macOS-Format, Zielexpansion
-samt Größengrenze, Kategorisierung anhand von 15 Geräteprofilen, alle
+102 Tests, komplett offline (unter einer Sekunde) — Protokollkodierung (DNS,
+NetBIOS, SNMP/BER, mDNS-TXT), ARP-Auswertung für Windows- und macOS-Format,
+Zielexpansion samt Größengrenze, Kategorisierung anhand von 15 Geräteprofilen,
+Unterscheidung von Mac, Apple TV, HomePod und iPhone, dauerhafte Notizen, alle
 Ausgabeformate sowie Routen und Token-Absicherung des Webservers.
 
 ---

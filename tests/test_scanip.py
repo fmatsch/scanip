@@ -271,6 +271,86 @@ class TestKlassifizierung(unittest.TestCase):
                       (classify.CONFIDENCE_LOW, classify.CONFIDENCE_MEDIUM))
 
 
+class TestAppleUnterscheidung(unittest.TestCase):
+    """macOS aktiviert den AirPlay-Empfang standardmäßig. Ein Mac bietet dadurch
+    dieselben Dienste und Ports an wie ein Apple TV - unterscheidbar nur über die
+    Modellkennung aus dem '_device-info'-TXT-Record."""
+
+    AIRPLAY = "_airplay._tcp.local,_raop._tcp.local,_companion-link._tcp.local"
+
+    def test_mac_mit_airplay_ist_kein_fernseher(self):
+        result = classify.classify(
+            open_ports=[5000, 7000], vendor="Apple", vendor_hint="computer",
+            names=["Arbeitsrechner.local"],
+            evidence={"mdns_model": "Mac17,5", "mdns_osxvers": "25",
+                      "mdns_services": self.AIRPLAY})
+        self.assertEqual(result.category, classify.MAC_PC)
+
+    def test_mac_ohne_aussagekräftigen_namen(self):
+        result = classify.classify(
+            open_ports=[22, 445, 5000, 5900, 7000], vendor="Apple",
+            vendor_hint="computer",
+            evidence={"mdns_model": "Mac15,3", "mdns_osxvers": "24",
+                      "mdns_services": self.AIRPLAY + ",_rfb._tcp.local"})
+        self.assertEqual(result.category, classify.MAC_PC)
+
+    def test_mac_ganz_ohne_mdns(self):
+        result = classify.classify(open_ports=[22, 445, 548, 5900],
+                                   vendor="Apple", vendor_hint="computer")
+        self.assertEqual(result.category, classify.MAC_PC)
+
+    def test_apple_tv_bleibt_media(self):
+        result = classify.classify(
+            open_ports=[7000, 7100, 49152, 62078], vendor="Apple",
+            vendor_hint="computer",
+            evidence={"mdns_model": "J42dAP",
+                      "mdns_services": self.AIRPLAY + ",_touch-able._tcp.local"})
+        self.assertEqual(result.category, classify.MEDIA)
+
+    def test_homepod_ist_media(self):
+        result = classify.classify(
+            open_ports=[7000, 62078], vendor="Apple", vendor_hint="computer",
+            evidence={"mdns_model": "AudioAccessory5,1",
+                      "mdns_services": self.AIRPLAY})
+        self.assertEqual(result.category, classify.MEDIA)
+
+    def test_iphone_bleibt_mobil(self):
+        result = classify.classify(
+            open_ports=[62078], vendor="Apple", vendor_hint="computer",
+            evidence={"mdns_model": "iPhone14,2",
+                      "mdns_services": "_companion-link._tcp.local"})
+        self.assertEqual(result.category, classify.MOBILE)
+
+    def test_modellauswertung_einzeln(self):
+        faelle = [
+            (None, "25", classify.MAC_PC),          # osxvers allein genügt
+            ("Mac17,5", None, classify.MAC_PC),
+            ("iMac21,1", None, classify.MAC_PC),
+            ("AppleTV6,2", None, classify.MEDIA),
+            ("AudioAccessory5,1", None, classify.MEDIA),
+            ("iPhone14,2", None, classify.MOBILE),
+            ("iPad13,1", None, classify.MOBILE),
+        ]
+        for model, osxvers, erwartet in faelle:
+            with self.subTest(model=model, osxvers=osxvers):
+                hints = classify.apple_model_hints(model, osxvers)
+                self.assertTrue(hints)
+                self.assertEqual(hints[0][0], erwartet)
+
+    def test_platinenkennung_ohne_osxvers_ist_kein_mac(self):
+        # J42dAP ist ein Apple TV; ohne osxvers darf daraus nie ein Mac werden
+        hints = classify.apple_model_hints("J42dAP", None, self.AIRPLAY)
+        self.assertEqual(hints[0][0], classify.MEDIA)
+
+    def test_linux_und_windows_bleiben_unberührt(self):
+        linux = classify.classify(open_ports=[22, 111], vendor="Raspberry Pi",
+                                  vendor_hint="computer", names=["raspberrypi"])
+        self.assertEqual(linux.category, classify.NIX_PC)
+        windows = classify.classify(open_ports=[135, 139, 445, 3389],
+                                    vendor="Intel", vendor_hint="computer")
+        self.assertEqual(windows.category, classify.WIN_PC)
+
+
 class TestNamensbereinigung(unittest.TestCase):
     def test_platzhalter_werden_verworfen(self):
         for value in ("none", "none.local", "unknown", "localhost", "-", "?",
@@ -326,6 +406,15 @@ class TestProtokolle(unittest.TestCase):
         name, rrtype, _rdata, rdoff = records[0]
         self.assertEqual(rrtype, 12)
         self.assertEqual(names._decode_name(packet, rdoff)[0], "router.local")
+
+    def test_txt_record_parsen(self):
+        rdata = b"\x0fmodel=Mac17,5" .replace(b"\x0f", bytes([13]))
+        rdata = bytes([13]) + b"model=Mac17,5" + bytes([11]) + b"osxvers=25"
+        self.assertEqual(names._parse_txt(rdata),
+                         {"model": "Mac17,5", "osxvers": "25"})
+
+    def test_txt_record_ohne_gleichheitszeichen(self):
+        self.assertEqual(names._parse_txt(bytes([4]) + b"nurso"[:4]), {})
 
     def test_netbios_namenskodierung(self):
         encoded = names._encode_netbios_name("*")

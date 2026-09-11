@@ -11,6 +11,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
 
 from . import classify as classifier
 from . import names as name_lookup
+from . import notes as notes_store
 from . import netinfo, oui, ports as portscan
 
 ProgressCallback = Optional[Callable[[str, int, int, str], None]]
@@ -34,6 +35,7 @@ class Device:
         self.is_gateway = False
         self.is_self = False
         self.rtt_ms: Optional[float] = None
+        self.note: str = ""
 
     @property
     def sort_key(self):
@@ -56,6 +58,8 @@ class Device:
             "is_gateway": self.is_gateway,
             "is_self": self.is_self,
             "rtt_ms": self.rtt_ms,
+            "note": self.note,
+            "note_key": notes_store.device_key(self.mac, self.ip),
         }
 
     def __repr__(self) -> str:
@@ -177,6 +181,7 @@ class Scanner:
         self.cancel_event.clear()
         opts = self.options
         oui.load_external()
+        notes_store.reload()
         self._gateways = set(netinfo.default_gateways())
         self._local_ips = {iface.ip for iface in netinfo.interfaces()}
 
@@ -356,6 +361,20 @@ class Scanner:
         elif device.evidence.get("mdns_name"):
             device.names["mdns_name"] = device.evidence["mdns_name"]
 
+        if opts.use_mdns:
+            # Apple-Modellkennung: trennt Mac, Apple TV, HomePod und iPhone,
+            # die sich über Ports und Dienste sonst kaum unterscheiden lassen.
+            info = name_lookup.mdns_device_info(ip, 1.5)
+            if info:
+                services = device.evidence.get("mdns_services", "")
+                if services and info.get("mdns_services"):
+                    info["mdns_services"] = ",".join(sorted(
+                        set(services.split(",")) | set(info["mdns_services"].split(","))))
+                device.evidence.update(info)
+                device.sources.add("mdns")
+                if info.get("mdns_instance"):
+                    device.names["mdns_instance"] = info["mdns_instance"]
+
         if opts.use_netbios:
             netbios = name_lookup.netbios_query(ip, 0.9)
             if netbios:
@@ -414,3 +433,4 @@ class Scanner:
         device.category = result.category
         device.confidence = result.confidence
         device.reasons = result.reasons
+        device.note = notes_store.get(device.mac, device.ip)

@@ -189,6 +189,87 @@ def mdns_reverse(ip: str, timeout: float = 1.2) -> Optional[str]:
     return None
 
 
+def _parse_txt(rdata: bytes) -> Dict[str, str]:
+    """TXT-Rdata besteht aus längenpräfigierten Zeichenketten (key=value)."""
+    result: Dict[str, str] = {}
+    offset = 0
+    while offset < len(rdata):
+        length = rdata[offset]
+        offset += 1
+        chunk = rdata[offset:offset + length].decode("utf-8", "replace")
+        offset += length
+        if "=" in chunk:
+            key, _, value = chunk.partition("=")
+            result[key.strip().lower()] = value.strip()
+    return result
+
+
+#: Dienste, die Apple-Geräte beantworten. Die Antwort enthält als Beifang den
+#: '_device-info'-TXT-Record mit der Modellkennung.
+DEVICE_INFO_SERVICES = ["_airplay._tcp.local", "_raop._tcp.local",
+                        "_companion-link._tcp.local", "_device-info._tcp.local"]
+
+
+def mdns_device_info(ip: str, timeout: float = 1.5) -> Dict[str, str]:
+    """Ermittelt Modellkennung, Betriebssystem-Hinweis und Anzeigenamen per mDNS.
+
+    Der '_device-info'-TXT-Record enthält 'model' (z.B. 'Mac17,5' bei einem Mac,
+    'J42dAP' bei einem Apple TV) und bei Macs zusätzlich 'osxvers'. Letzteres
+    veröffentlicht ausschließlich macOS und trennt damit einen Mac mit aktivem
+    AirPlay-Empfang zuverlässig von einem Apple TV - beide bieten sonst dieselben
+    Dienste an.
+
+    Der PTR-Zielname liefert nebenbei den vom Benutzer vergebenen Gerätenamen
+    ("MacBook von Florian"), der aussagekräftiger ist als der Hostname.
+    """
+    result: Dict[str, str] = {}
+    services: List[str] = []
+    sock = _multicast_socket(timeout)
+    try:
+        for service in DEVICE_INFO_SERVICES:
+            query = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)
+            query += _encode_qname(service) + struct.pack(">HH", 12, 0x8001)
+            for target in ((MDNS_ADDR, MDNS_PORT), (ip, MDNS_PORT)):
+                try:
+                    sock.sendto(query, target)
+                except OSError:
+                    continue
+            time.sleep(0.02)      # Anfragen leicht entzerren
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            sock.settimeout(max(0.05, min(0.4, deadline - time.time())))
+            try:
+                data, addr = sock.recvfrom(8192)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if addr[0] != ip:
+                continue
+            for name, rrtype, rdata, rdoff in _parse_dns_answers(data):
+                if rrtype == 16 and "._device-info._tcp." in name and rdata:
+                    for key, value in _parse_txt(rdata).items():
+                        if key in ("model", "osxvers") and value:
+                            result.setdefault("mdns_" + key, value[:60])
+                elif rrtype == 12:
+                    target, _ = _decode_name(data, rdoff)
+                    if "._tcp.local" in target or "._udp.local" in target:
+                        instance, _, service_type = target.rstrip(".").partition("._")
+                        if service_type:
+                            services.append("_" + service_type)
+                        if instance and "mdns_instance" not in result:
+                            result["mdns_instance"] = instance[:60]
+            if "mdns_model" in result and "mdns_instance" in result:
+                break                      # alles Wesentliche beisammen
+    finally:
+        sock.close()
+
+    if services:
+        result["mdns_services"] = ",".join(sorted(set(services))[:12])
+    return result
+
+
 def mdns_sweep(timeout: float = 2.5) -> Dict[str, Dict[str, str]]:
     """Ein Multicast-Rundruf; sammelt A-Records aller antwortenden Bonjour-Geräte."""
     query = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)

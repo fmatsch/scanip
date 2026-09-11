@@ -8,7 +8,7 @@ import sys
 import time
 from typing import List, Optional
 
-from . import __version__, netinfo, oui, ports as portscan, report
+from . import __version__, netinfo, notes, oui, ports as portscan, report
 from .scanner import ScanOptions, Scanner, expand_targets
 
 EPILOG = """\
@@ -20,6 +20,8 @@ Beispiele:
   python -m scanip -p 1-1024 --why          Portbereich + Begründung anzeigen
   python -m scanip -o bericht.html          HTML-Report schreiben
   python -m scanip --web                    Browser-Oberfläche starten (empfohlen)
+  python -m scanip --note 192.168.1.50 "Drucker Buchhaltung"
+                                            Notiz zu einem Gerät speichern
   python -m scanip --gui                    Tk-Oberfläche starten
   python -m scanip --update-oui             Hersteller-Datenbank aktualisieren
 
@@ -48,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Schnellscan: nur Discovery-Ports, ohne SNMP/NetBIOS")
     parser.add_argument("--thorough", action="store_true",
                         help="Gründlich: längere Timeouts, mehr Ports (1-10000)")
+    parser.add_argument("--note", nargs=2, metavar=("GERÄT", "TEXT"),
+                        help="Notiz setzen; GERÄT ist eine IP oder MAC-Adresse. "
+                             "Leerer TEXT löscht die Notiz.")
+    parser.add_argument("--notes", action="store_true",
+                        help="Notizspalte immer anzeigen")
+    parser.add_argument("--list-notes", action="store_true",
+                        help="gespeicherte Notizen auflisten und beenden")
     parser.add_argument("--why", action="store_true",
                         help="Spalte mit der Begründung der Kategorie anzeigen")
     parser.add_argument("--services", action="store_true",
@@ -182,6 +191,34 @@ def main(argv: Optional[List[str]] = None) -> int:
         count = oui.load_external(args.oui_file)
         sys.stderr.write("%d Hersteller-Präfixe geladen.\n" % count)
 
+    if args.list_notes:
+        eintraege = notes.format_list()
+        if eintraege:
+            print("\n".join(eintraege))
+        else:
+            print("Keine Notizen gespeichert.")
+        sys.stderr.write("Datei: %s\n" % notes.notes_path())
+        return 0
+
+    if args.note:
+        ziel, text = args.note
+        mac = netinfo.normalize_mac(ziel)
+        ip = None if mac else ziel
+        if not mac:
+            try:
+                import ipaddress as _ip
+                _ip.IPv4Address(ziel)
+            except ValueError:
+                sys.stderr.write("'%s' ist weder eine IP- noch eine MAC-Adresse.\n" % ziel)
+                return 2
+        if notes.set_note(mac, ip, text):
+            sys.stderr.write("Notiz %s für %s.\n"
+                             % ("gelöscht" if not text.strip() else "gespeichert", ziel))
+            return 0
+        sys.stderr.write("Notiz konnte nicht gespeichert werden (%s).\n"
+                         % notes.notes_path())
+        return 1
+
     if args.list_interfaces:
         gateways = netinfo.default_gateways()
         for iface in netinfo.interfaces():
@@ -261,7 +298,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             width = os.get_terminal_size().columns
         except OSError:
             width = 200
-        table = report.text_table(devices, args.services, max(80, width - 1), args.why)
+        table = report.text_table(devices, args.services, max(80, width - 1),
+                                  args.why, True if args.notes else None)
         _write_output(table, args.output)
         if not args.quiet and not args.output:
             sys.stderr.write("\n" + report.summary(devices, duration) + "\n")

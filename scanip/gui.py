@@ -12,7 +12,7 @@ import webbrowser
 from tkinter import filedialog, messagebox, ttk
 from typing import List, Optional
 
-from . import __version__, netinfo, oui, ports as portscan, report
+from . import __version__, netinfo, notes, oui, ports as portscan, report
 from .scanner import Device, ScanOptions, Scanner, expand_targets
 
 PORT_PRESETS = [
@@ -29,7 +29,8 @@ COLUMNS = [
     ("vendor", "Hersteller", 165),
     ("hostname", "Gerätename", 220),
     ("category", "Kategorie", 160),
-    ("ports", "Offene Ports", 320),
+    ("note", "Notiz", 200),
+    ("ports", "Offene Ports", 300),
 ]
 
 
@@ -151,7 +152,7 @@ class ScanApp:
         self.progress.pack(side="left")
         self.status_var = tk.StringVar(value="Bereit.")
         ttk.Label(bottom, textvariable=self.status_var).pack(side="left", padx=12)
-        ttk.Label(bottom, text="Doppelklick auf eine Zeile zeigt Details",
+        ttk.Label(bottom, text="Doppelklick auf eine Zeile: Details und Notiz",
                   foreground="#888888").pack(side="right")
 
     def _prefill_target(self) -> None:
@@ -278,7 +279,7 @@ class ScanApp:
             else:
                 hint = "Keine Geräte gefunden"
             self.tree.insert("", "end", iid="__hinweis__", tags=("unknown",),
-                             values=("", "", "", hint, "", ""))
+                             values=("", "", "", hint, "", "", ""))
             self.count_label.configure(
                 text="0 von %d Geräten" % len(self.devices) if self.devices else "")
             return
@@ -300,6 +301,7 @@ class ScanApp:
                 name or "-",
                 device.category + (" (?)" if device.confidence == "niedrig"
                                    and device.category != "Unbekannt" else ""),
+                device.note or "",
                 portscan.format_ports(device.open_ports, True),
             ))
         self.count_label.configure(
@@ -324,7 +326,7 @@ class ScanApp:
 
         window = tk.Toplevel(self.root)
         window.title("Details - %s" % device.ip)
-        window.geometry("620x520")
+        window.geometry("640x620")
         text = tk.Text(window, wrap="word", padx=12, pady=10, height=24)
         scroll = ttk.Scrollbar(window, orient="vertical", command=text.yview)
         text.configure(yscrollcommand=scroll.set)
@@ -357,6 +359,34 @@ class ScanApp:
 
         text.insert("1.0", "\n".join(lines))
         text.configure(state="disabled")
+
+        # Notiz bearbeiten - bleibt über Scans hinweg erhalten
+        note_frame = ttk.LabelFrame(window, text="Notiz (bleibt gespeichert)",
+                                    padding=8)
+        note_frame.pack(side="bottom", fill="x", padx=8, pady=(0, 4))
+        note_box = tk.Text(note_frame, height=3, wrap="word")
+        note_box.insert("1.0", device.note or "")
+        note_box.pack(side="left", fill="both", expand=True)
+
+        status = ttk.Label(note_frame, text="", foreground="#2f855a", width=10)
+
+        def speichern(_event=None) -> str:
+            text = note_box.get("1.0", "end").strip()
+            if notes.set_note(device.mac, device.ip, text, device.hostname):
+                device.note = text
+                self._refresh_table()
+                status.configure(text="gespeichert", foreground="#2f855a")
+            else:
+                status.configure(text="Fehler", foreground="#c05621")
+            window.after(2500, lambda: status.configure(text=""))
+            return "break"
+
+        button_column = ttk.Frame(note_frame)
+        button_column.pack(side="right", fill="y", padx=(8, 0))
+        ttk.Button(button_column, text="Speichern", command=speichern).pack()
+        status.pack(pady=(4, 0))
+        note_box.bind("<Control-s>", speichern)
+        note_box.bind("<Command-s>", speichern)
 
         buttons = ttk.Frame(window, padding=8)
         buttons.pack(side="bottom", fill="x")

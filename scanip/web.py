@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
-from . import __version__, netinfo, oui, ports as portscan, report
+from . import __version__, netinfo, notes, oui, ports as portscan, report
 from .scanner import Device, ScanOptions, Scanner, expand_targets
 
 PORT_PRESETS = {
@@ -270,6 +270,25 @@ class Handler(BaseHTTPRequestHandler):
                        400 if error else 200)
             return
 
+        if parsed.path == "/api/note":
+            mac = (payload.get("mac") or "").strip() or None
+            ip = (payload.get("ip") or "").strip() or None
+            text = str(payload.get("text", ""))
+            if not mac and not ip:
+                self._json({"error": "Gerät nicht angegeben"}, 400)
+                return
+            if notes.set_note(mac, ip, text):
+                # Laufendes Ergebnis mitziehen, damit die Notiz sofort sichtbar ist
+                with self.state.lock:
+                    for device in self.state.devices:
+                        if (mac and device.mac == mac) or (not mac and device.ip == ip):
+                            device.note = text.strip()
+                self._json({"ok": True, "text": text.strip()})
+            else:
+                self._json({"error": "Speichern fehlgeschlagen (%s)"
+                            % notes.notes_path()}, 500)
+            return
+
         if parsed.path == "/api/cancel":
             self.state.cancel()
             self._json({"ok": True})
@@ -378,6 +397,13 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
   .cat { white-space:nowrap; font-weight:600; }
   .dim { color:var(--muted); font-weight:400; }
   .empty { padding:28px 14px; text-align:center; color:var(--muted); }
+  .notecell { max-width:230px; white-space:pre-wrap; cursor:text; }
+  .notecell:hover { background:var(--chip); }
+  .addnote { color:var(--muted); opacity:.55; font-size:12.5px; }
+  tr:hover .addnote { opacity:1; }
+  .noteedit { width:100%%; min-width:170px; font:inherit; font-size:13px;
+              padding:5px 7px; border:1px solid var(--accent); border-radius:6px;
+              background:var(--card); color:var(--fg); resize:vertical; }
   .detail td { background:var(--chip); }
   .detail dl { display:grid; grid-template-columns:max-content 1fr; gap:3px 16px;
                margin:0 0 10px; font-size:13px; }
@@ -436,10 +462,11 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
       <th data-key="vendor">Hersteller</th>
       <th data-key="hostname">Gerätename</th>
       <th data-key="category">Kategorie</th>
+      <th data-key="note">Notiz</th>
       <th data-key="ports">Offene Ports</th>
       <th data-key="why" class="why-col">Begründung</th>
     </tr></thead>
-    <tbody id="body"><tr><td colspan="7" class="empty">
+    <tbody id="body"><tr><td colspan="8" class="empty">
       Noch kein Scan durchgeführt &ndash; oben auf &bdquo;Scan starten&ldquo; klicken.
     </td></tr></tbody>
   </table>
@@ -447,7 +474,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 
 <script>
 var TOKEN = "%(token)s";
-var devices = [], sortKey = "ip", sortDesc = false, running = false, openRow = null;
+var devices = [], sortKey = "ip", sortDesc = false, running = false,
+    openRow = null, editing = null;
 
 function api(path, options) {
   options = options || {};
@@ -473,6 +501,7 @@ function sortValue(device, key) {
   if (key === "ip") return ipKey(device.ip);
   if (key === "ports") return ("0000" + device.open_ports.length).slice(-4) + ipKey(device.ip);
   if (key === "why") return (device.reasons[0] || "").toLowerCase();
+  if (key === "note") return (device.note ? "0" + device.note.toLowerCase() : "1");
   return String(device[key] || "\\uffff").toLowerCase() + ipKey(device.ip);
 }
 
@@ -482,7 +511,7 @@ function visible() {
   var list = devices.filter(function (device) {
     if (!terms.length) return true;
     var hay = [device.ip, device.mac, device.vendor, device.hostname,
-               device.category, device.ports_text].join(" ").toLowerCase();
+               device.category, device.ports_text, device.note].join(" ").toLowerCase();
     return terms.every(function (term) { return hay.indexOf(term) >= 0; });
   });
   list.sort(function (a, b) {
@@ -536,7 +565,7 @@ function render() {
   var body = document.getElementById("body");
   var list = visible();
   if (!list.length) {
-    body.innerHTML = "<tr><td colspan='7' class='empty'>" +
+    body.innerHTML = "<tr><td colspan='8' class='empty'>" +
       (devices.length ? "Kein Gerät passt zum Filter."
        : running ? "Suche läuft ..."
        : "Noch kein Scan durchgeführt &ndash; oben auf &bdquo;Scan starten&ldquo; klicken.") +
@@ -561,11 +590,13 @@ function render() {
       "<td class='cat" + (device.confidence === "niedrig" ? " dim" : "") + "'>" +
         esc(device.category) + (device.confidence === "niedrig" &&
           device.category !== "Unbekannt" ? " (?)" : "") + "</td>" +
+      "<td class='notecell' title='Klicken zum Bearbeiten'>" +
+        (device.note ? esc(device.note) : "<span class='addnote'>+ Notiz</span>") + "</td>" +
       "<td class='ports'>" + ports + "</td>" +
       "<td class='why-col dim'>" + esc((device.reasons || []).slice(0, 2).join("; ") || "-") +
       "</td></tr>";
     if (openRow === device.ip) {
-      html += "<tr class='detail'><td colspan='7'>" + detailHtml(device) + "</td></tr>";
+      html += "<tr class='detail'><td colspan='8'>" + detailHtml(device) + "</td></tr>";
     }
   });
   body.innerHTML = html;
@@ -604,7 +635,8 @@ function poll() {
     }
     document.getElementById("status").textContent = text;
     document.getElementById("go").textContent = data.running ? "Abbrechen" : "Scan starten";
-    render();
+    if (!editing) { render(); }        // offenes Notizfeld nicht wegräumen
+
     renderStats(data);
   }).catch(function () {
     document.getElementById("status").textContent =
@@ -641,9 +673,51 @@ document.querySelectorAll("th").forEach(function (th) {
 document.getElementById("body").addEventListener("click", function (event) {
   var row = event.target.closest("tr[data-ip]");
   if (!row) return;
+  if (event.target.closest(".notecell")) {
+    bearbeiteNotiz(row.dataset.ip, event.target.closest(".notecell"));
+    return;                               // Notiz bearbeiten statt Details aufklappen
+  }
   openRow = (openRow === row.dataset.ip) ? null : row.dataset.ip;
   render();
 });
+
+function bearbeiteNotiz(ip, zelle) {
+  var device = devices.find(function (d) { return d.ip === ip; });
+  if (!device || editing) return;
+  editing = ip;                           // verhindert, dass der Poll neu zeichnet
+  var input = document.createElement("textarea");
+  input.className = "noteedit";
+  input.value = device.note || "";
+  input.rows = 2;
+  input.placeholder = "Notiz \u2013 bleibt über Scans hinweg erhalten";
+  zelle.innerHTML = "";
+  zelle.appendChild(input);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+
+  var fertig = false;
+  function beenden(speichern) {
+    if (fertig) return;
+    fertig = true;
+    var text = input.value;
+    editing = null;
+    if (!speichern || text === (device.note || "")) { render(); return; }
+    device.note = text.trim();            // sofort anzeigen
+    render();
+    api("/api/note", {method: "POST", body: JSON.stringify({
+      mac: device.mac || "", ip: device.ip, text: text
+    })}).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.error) {
+        document.getElementById("status").textContent = data.error;
+      }
+    });
+  }
+  input.addEventListener("blur", function () { beenden(true); });
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); beenden(true); }
+    if (event.key === "Escape") { input.value = device.note || ""; beenden(false); }
+  });
+}
 
 ["html", "csv", "json"].forEach(function (fmt) {
   document.getElementById("exp-" + fmt).href =
