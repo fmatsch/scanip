@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Bauen (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artefakt: scanip-macos
+          - os: windows-latest
+            artefakt: scanip-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tk prüfen
+        run: python -c "import tkinter; print('Tk', tkinter.Tcl().eval('info patchlevel'))"
+
+      - name: Testsuite
+        run: python -m unittest discover -s tests
+
+      - name: Anwendung bauen
+        run: python tools/build_app.py
+
+      # Ein .app-Bündel ist ein Ordner - ditto erhält Rechte und Symlinks,
+      # die ein gewöhnliches zip zerstören würde.
+      - name: macOS-App packen
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --keepParent --sequesterRsrc scanip.app scanip-macos.zip
+          ls -la
+
+      - name: Windows-Datei benennen
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          dir
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artefakt }}
+          path: |
+            dist/scanip-macos.zip
+            dist/scanip.exe
+          if-no-files-found: error
+
+  release:
+    name: Release veröffentlichen
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefakte
+
+      - name: Dateien sammeln und Prüfsummen bilden
+        run: |
+          mkdir -p release
+          find artefakte -type f \( -name '*.zip' -o -name '*.exe' \) \
+            -exec cp {} release/ \;
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          ls -la
+
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME:-manuell}"
+          gh release create "$VERSION" release/* \
+            --title "scanip $VERSION" \
+            --notes "Netzwerk-Scanner für Windows und macOS.
+
+          **Download**
+
+          * \`scanip-macos.zip\` – macOS (Apple Silicon & Intel), entpacken und starten.
+            Beim ersten Start Rechtsklick → Öffnen, da die App nicht signiert ist.
+          * \`scanip.exe\` – Windows, einzelne Datei, direkt ausführbar.
+            SmartScreen meldet ggf. einen unbekannten Herausgeber → \"Weitere Informationen\" → \"Trotzdem ausführen\".
+
+          Beide Pakete bringen Python und Tk mit, es muss nichts installiert werden.
+          Prüfsummen in \`SHA256SUMS.txt\`.
+
+          **Ohne Download:** \`python3 -m scanip --web\` startet die Browser-Oberfläche direkt aus dem Quellcode." \
+            || gh release upload "$VERSION" release/* --clobber

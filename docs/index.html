@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scanip – Netzwerk-Scanner für Windows und macOS</title>
+<meta name="description" content="Zeigt jedes Gerät im Netz mit IP, offenen Ports, MAC-Adresse, vermuteter Gerätekategorie und Gerätename. Ohne Installation, ohne Administratorrechte.">
+<link rel="icon" href="icon.png">
+<meta property="og:title" content="scanip – Netzwerk-Scanner">
+<meta property="og:description" content="IP, offene Ports, MAC-Adresse, Gerätekategorie und Name – für Windows und macOS.">
+<meta property="og:image" content="icon.png">
+<style>
+  :root {
+    --bg:#f6f7f9; --fg:#1b1f24; --muted:#5c6570; --card:#fff; --line:#dfe3e8;
+    --accent:#2b6cb0; --accent-fg:#fff; --chip:#eef2f7; --code:#f2f4f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --fg:#e8eaed; --muted:#9aa4af; --card:#1d2125;
+            --line:#2e343b; --accent:#4b8ff0; --accent-fg:#fff; --chip:#262c33;
+            --code:#0f1216; }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:0 20px; }
+  header { text-align:center; padding:56px 20px 40px; }
+  header img { width:104px; height:104px; border-radius:23%; display:block;
+               margin:0 auto 18px; box-shadow:0 8px 28px rgba(0,0,0,.22); }
+  h1 { font-size:40px; margin:0 0 6px; letter-spacing:-.02em; }
+  .tagline { font-size:19px; color:var(--muted); margin:0 auto 6px; max-width:620px; }
+  .badges { margin-top:16px; display:flex; gap:8px; justify-content:center;
+            flex-wrap:wrap; }
+  .badge { background:var(--chip); border:1px solid var(--line); border-radius:99px;
+           padding:4px 12px; font-size:13px; color:var(--muted); }
+  .downloads { display:flex; gap:12px; justify-content:center; flex-wrap:wrap;
+               margin:30px 0 10px; }
+  .btn { display:inline-flex; flex-direction:column; align-items:center; gap:0;
+         text-decoration:none; background:var(--accent); color:var(--accent-fg);
+         padding:12px 26px; border-radius:10px; font-weight:600; font-size:16px;
+         line-height:1.35; min-width:210px;
+         box-shadow:0 2px 10px rgba(43,108,176,.28); transition:transform .12s; }
+  .btn:hover { transform:translateY(-1px); }
+  .btn.ghost { background:transparent; color:var(--fg);
+               border:1px solid var(--line); box-shadow:none; }
+  .btn small { font-weight:400; font-size:12px; opacity:.82; }
+  .btn.ghost { justify-content:center; min-height:52px; }
+  .hint { text-align:center; color:var(--muted); font-size:13px; margin:6px 0 0; }
+  section { padding:38px 0; border-top:1px solid var(--line); }
+  h2 { font-size:24px; margin:0 0 8px; letter-spacing:-.01em; }
+  h3 { font-size:17px; margin:26px 0 6px; }
+  p { margin:0 0 14px; }
+  .lead { color:var(--muted); margin-bottom:22px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+          gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:11px;
+          padding:17px 19px; }
+  .card h3 { margin:0 0 5px; font-size:16px; }
+  .card p { margin:0; color:var(--muted); font-size:14px; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:10px;
+        padding:14px 16px; overflow-x:auto; margin:0 0 14px;
+        font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+         font-size:.92em; }
+  p code, li code, td code { background:var(--code); border-radius:4px;
+                             padding:1px 5px; }
+  .tablewrap { background:var(--card); border:1px solid var(--line);
+               border-radius:11px; overflow-x:auto; margin-bottom:14px; }
+  table { border-collapse:collapse; width:100%; min-width:640px; font-size:13.5px; }
+  th, td { text-align:left; padding:9px 13px; border-bottom:1px solid var(--line);
+           white-space:nowrap; }
+  th { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+       color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  ul { margin:0 0 14px; padding-left:22px; }
+  li { margin-bottom:5px; }
+  .note { background:var(--chip); border-left:3px solid var(--accent);
+          border-radius:0 8px 8px 0; padding:12px 16px; margin:0 0 14px;
+          font-size:14.5px; }
+  footer { border-top:1px solid var(--line); padding:28px 0 46px;
+           color:var(--muted); font-size:13.5px; text-align:center; }
+  footer a { color:var(--accent); }
+  a { color:var(--accent); }
+  @media (max-width:600px) {
+    h1 { font-size:31px; } .tagline { font-size:17px; }
+    header { padding:38px 16px 30px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <img src="icon.png" alt="">
+    <h1>scanip</h1>
+    <p class="tagline">Zeigt jedes Gerät im Netzwerk – mit IP-Adresse, offenen Ports,
+       MAC-Adresse, vermuteter Gerätekategorie und Gerätename.</p>
+    <div class="badges">
+      <span class="badge">Windows · macOS · Linux</span>
+      <span class="badge">Ohne Administratorrechte</span>
+      <span class="badge">Keine Abhängigkeiten</span>
+      <span class="badge">MIT-Lizenz</span>
+    </div>
+    <div class="downloads">
+      <a class="btn" href="https://github.com/fmatsch/scanip/releases/latest/download/scanip-macos.zip">
+        Download für macOS <small>.app · Apple Silicon &amp; Intel</small></a>
+      <a class="btn" href="https://github.com/fmatsch/scanip/releases/latest/download/scanip.exe">
+        Download für Windows <small>.exe · einzelne Datei</small></a>
+      <a class="btn ghost" href="https://github.com/fmatsch/scanip">Quellcode auf GitHub</a>
+    </div>
+    <p class="hint">Beide Pakete bringen alles Nötige mit – es muss kein Python
+       installiert werden. <a href="#start">Auch direkt aus dem Quellcode nutzbar.</a></p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="was">
+  <h2>Was angezeigt wird</h2>
+  <p class="lead">Ein Durchlauf im eigenen Netz dauert je nach Umfang etwa 10 bis 20 Sekunden.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th>IP-Adresse</th><th>MAC-Adresse</th><th>Hersteller</th>
+        <th>Gerätename</th><th>Kategorie</th><th>Offene Ports</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><code>192.168.1.1</code></td><td><code>78:20:51:AA:BB:01</code></td>
+            <td>TP-Link</td><td>Archer AX53</td><td>Router / Gateway</td>
+            <td>53, 80, 443</td></tr>
+        <tr><td><code>192.168.1.50</code></td><td><code>3C:2A:F4:11:22:33</code></td>
+            <td>Brother</td><td>BRN3C2AF4</td><td>Drucker / MFP</td>
+            <td>515, 631, 9100</td></tr>
+        <tr><td><code>192.168.1.68</code></td><td><code>C8:69:CD:AA:BB:02</code></td>
+            <td>Apple</td><td>Apple-TV-Wohnzimmer</td><td>Smart-TV / Media</td>
+            <td>7000, 62078</td></tr>
+        <tr><td><code>192.168.1.152</code></td><td><code>28:2E:89:AA:BB:03</code></td>
+            <td>Intel</td><td>PC-BUERO-01</td><td>Computer (Windows)</td>
+            <td>135, 139, 445</td></tr>
+        <tr><td><code>192.168.1.20</code></td><td><code>00:11:32:AA:BB:CC</code></td>
+            <td>Synology</td><td>DiskStation</td><td>NAS / Storage</td>
+            <td>445, 2049, 5001</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Erkannt werden unter anderem Router, Switches, Access Points, Drucker,
+     Computer (Windows, macOS, Linux), Server, NAS, IP-Telefone, IP-Kameras,
+     Smart-TVs, Smartphones, Spielkonsolen, Smart-Home-Geräte, SPS und USV.</p>
+</section>
+
+<section id="funktionen">
+  <h2>Funktionen</h2>
+  <div class="grid">
+    <div class="card"><h3>Drei Bedienwege</h3>
+      <p>Browser-Oberfläche mit Live-Fortschritt, klassisches Fenster und
+         Kommandozeile – alle mit demselben Funktionsumfang.</p></div>
+    <div class="card"><h3>Namen aus fünf Quellen</h3>
+      <p>Reverse-DNS, mDNS/Bonjour, NetBIOS, SNMP und SSDP/UPnP werden parallel
+         abgefragt – selbst implementiert, ohne Fremdbibliotheken.</p></div>
+    <div class="card"><h3>Begründete Kategorien</h3>
+      <p>Offene Ports, MAC-Hersteller, Namensmuster und angebotene Dienste
+         ergeben eine Punktzahl. Jede Einordnung ist nachvollziehbar begründet.</p></div>
+    <div class="card"><h3>Ohne Sonderrechte</h3>
+      <p>TCP-Connect-Scan statt Rohsockets: keine Administrator- oder
+         Root-Rechte, keine Treiberinstallation.</p></div>
+    <div class="card"><h3>Export</h3>
+      <p>HTML-Report zum Sortieren und Filtern, CSV für Excel und JSON zur
+         Weiterverarbeitung.</p></div>
+    <div class="card"><h3>Nur Standardbibliothek</h3>
+      <p>Keine externen Pakete, keine Telemetrie, keine Netzwerkverbindung nach
+         außen. Rund 4.700 Zeilen Python mit 67 Tests.</p></div>
+  </div>
+</section>
+
+<section id="start">
+  <h2>Ohne Download starten</h2>
+  <p class="lead">Wer Python hat, braucht die Pakete nicht.</p>
+<pre>git clone https://github.com/fmatsch/scanip.git
+cd scanip
+python3 -m scanip --web        # Browser-Oberfläche
+python3 -m scanip              # Kommandozeile, eigenes Netz
+python3 -m scanip 192.168.1.0/24 --why -o bericht.html</pre>
+  <p>Vorausgesetzt wird Python 3.8 oder neuer. Weitere Optionen stehen in der
+     <a href="https://github.com/fmatsch/scanip#readme">Dokumentation</a>.</p>
+</section>
+
+<section id="hinweise">
+  <h2>Vor dem ersten Start</h2>
+  <h3>macOS</h3>
+  <p>Die App ist nicht signiert. Beim ersten Start deshalb <strong>Rechtsklick →
+     Öffnen</strong> wählen und den Hinweis bestätigen; danach startet sie normal
+     per Doppelklick.</p>
+  <h3>Windows</h3>
+  <p>SmartScreen meldet einen unbekannten Herausgeber. Über <strong>„Weitere
+     Informationen“ → „Trotzdem ausführen“</strong> lässt sich die Datei starten.</p>
+  <div class="note">
+    <strong>Rechtlicher Hinweis:</strong> Portscans nur in Netzen durchführen, für
+    die eine Berechtigung vorliegt – also im eigenen Netz oder mit ausdrücklicher
+    Erlaubnis des Betreibers. In fremden Netzen kann ein Scan unzulässig sein.
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><a href="https://github.com/fmatsch/scanip">Quellcode</a> ·
+       <a href="https://github.com/fmatsch/scanip/releases">Alle Versionen</a> ·
+       <a href="https://github.com/fmatsch/scanip/blob/main/LICENSE">MIT-Lizenz</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
