@@ -27,6 +27,26 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Die gebaute Anwendung soll dieselbe Version melden wie das Release.
+      - name: Versionsnummer aus dem Tag übernehmen
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -n "$VERSION" ] && [ "$VERSION" != "$GITHUB_REF_NAME" ]; then
+            python - "$VERSION" <<'EOF'
+          import re, sys
+          version = sys.argv[1]
+          for pfad, muster in (("scanip/__init__.py", r'__version__ = "[^"]*"'),
+                               ("pyproject.toml", r'^version = "[^"]*"')):
+              text = open(pfad, encoding="utf-8").read()
+              ersatz = ('__version__ = "%s"' if "init" in pfad else 'version = "%s"') % version
+              text = re.sub(muster, ersatz, text, count=1, flags=re.M)
+              open(pfad, "w", encoding="utf-8").write(text)
+          print("Version gesetzt:", version)
+          EOF
+          fi
+          python -c "import scanip; print('gemeldete Version:', scanip.__version__)"
+
       - name: Tk prüfen
         run: python -c "import tkinter; print('Tk', tkinter.Tcl().eval('info patchlevel'))"
 

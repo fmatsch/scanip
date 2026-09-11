@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scanip"
-version = "1.0.0"
+version = "1.0.2"
 description = "Netzwerk-Scanner fuer Windows, macOS und Linux: IP, offene Ports, MAC, Geraetekategorie und Geraetename"
 readme = "README.md"
 requires-python = ">=3.8"
