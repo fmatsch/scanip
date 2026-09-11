@@ -168,7 +168,9 @@ Scanvorgänge, Programmneustarts und alle drei Bedienwege hinweg erhalten.
 
 * **Browser-Oberfläche:** in die Notizspalte klicken, tippen, Eingabetaste.
   Umschalt+Eingabe erzeugt eine neue Zeile, Escape verwirft.
-* **Tk-Fenster:** Doppelklick auf eine Zeile, Notizfeld unten im Detailfenster.
+* **Tk-Fenster:** Doppelklick in die Spalte „Notiz“ – ein Eingabefeld öffnet sich
+  direkt in der Tabelle (Eingabetaste speichert, Escape verwirft). Alternativ im
+  Detailfenster, das ein Doppelklick auf jede andere Spalte öffnet.
 * **Kommandozeile:** `python3 -m scanip --note 192.168.1.50 "Drucker Buchhaltung"`
 
 Als Schlüssel dient die **MAC-Adresse**, nicht die IP – ein Gerät behält seine
@@ -362,7 +364,7 @@ sonst warnt SmartScreen.
 python3 -m unittest discover -s tests -v
 ```
 
-102 Tests, komplett offline (unter einer Sekunde) — Protokollkodierung (DNS,
+107 Tests, komplett offline (unter einer Sekunde) — Protokollkodierung (DNS,
 NetBIOS, SNMP/BER, mDNS-TXT), ARP-Auswertung für Windows- und macOS-Format,
 Zielexpansion samt Größengrenze, Kategorisierung anhand von 15 Geräteprofilen,
 Unterscheidung von Mac, Apple TV, HomePod und iPhone, dauerhafte Notizen, alle

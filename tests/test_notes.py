@@ -152,5 +152,57 @@ class TestAusgabeMitNotizen(NotizTestFall):
         self.assertEqual([g.ip for g in treffer], ["192.168.1.50"])
 
 
+class TestOberflaechenAnbindung(NotizTestFall):
+    """Prüft die Teile der Bedienoberflächen, die ohne Fenster testbar sind."""
+
+    def test_tk_spalte_vorhanden(self):
+        from scanip import gui
+        schluessel = [key for key, _titel, _breite in gui.COLUMNS]
+        self.assertIn("note", schluessel)
+
+    def test_tk_wertetupel_passt_zur_spaltenzahl(self):
+        """Die Hinweiszeile muss genauso viele Werte liefern wie es Spalten gibt."""
+        from scanip import gui
+        import inspect
+        quelltext = inspect.getsource(gui.ScanApp._refresh_table)
+        # Hinweiszeile: values=("", "", "", hint, "", "", "")
+        treffer = [zeile for zeile in quelltext.splitlines() if "__hinweis__" in zeile]
+        self.assertTrue(treffer)
+        werte = quelltext.split('values=("", "", "", hint')[1].split(")")[0]
+        anzahl = 4 + werte.count(',')
+        self.assertEqual(anzahl, len(gui.COLUMNS))
+
+    def test_web_seite_enthaelt_notizspalte(self):
+        from scanip import web
+        seite = web.PAGE_TEMPLATE % {"version": "1", "token": "t",
+                                     "target": "192.168.1.0/24", "presets": ""}
+        self.assertIn("notecell", seite)
+        self.assertIn("bearbeiteNotiz", seite)
+        self.assertIn(">Notiz<", seite)
+
+    def test_web_tabellenbreite_stimmt(self):
+        """colspan der Platzhalterzeilen muss zur Spaltenzahl passen."""
+        from scanip import web
+        seite = web.PAGE_TEMPLATE % {"version": "1", "token": "t",
+                                     "target": "x", "presets": ""}
+        kopfspalten = seite.count('<th data-key=')
+        import re
+        for colspan in re.findall(r"colspan='?\"?(\d+)", seite):
+            self.assertEqual(int(colspan), kopfspalten)
+
+    def test_geraet_bekommt_notiz_beim_scan(self):
+        """_finalize muss die gespeicherte Notiz an das Gerät hängen."""
+        from scanip.scanner import Scanner
+        notes.set_note("AA:BB:CC:DD:EE:FF", "192.168.1.5", "vorhandene Notiz")
+        notes.reload()
+        device = Device("192.168.1.5")
+        device.mac = "AA:BB:CC:DD:EE:FF"
+        scanner = Scanner()
+        scanner._gateways = set()
+        scanner._local_ips = set()
+        scanner._finalize(device)
+        self.assertEqual(device.note, "vorhandene Notiz")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

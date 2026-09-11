@@ -48,6 +48,7 @@ class ScanApp:
         self.started = 0.0
         self._sort_column = "ip"
         self._sort_reverse = False
+        self._note_editor: Optional[tk.Entry] = None
 
         self._build_widgets()
         self._prefill_target()
@@ -141,7 +142,9 @@ class ScanApp:
         self.tree.configure(yscrollcommand=vbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vbar.pack(side="right", fill="y")
-        self.tree.bind("<Double-1>", self._show_details)
+        self.tree.bind("<Double-1>", self._on_double_click)
+        self.tree.bind("<Return>", self._edit_note)
+        self._note_editor: Optional[tk.Entry] = None
         self.tree.tag_configure("gateway", font=("TkDefaultFont", 10, "bold"))
         self.tree.tag_configure("unknown", foreground="#888888")
 
@@ -152,7 +155,9 @@ class ScanApp:
         self.progress.pack(side="left")
         self.status_var = tk.StringVar(value="Bereit.")
         ttk.Label(bottom, textvariable=self.status_var).pack(side="left", padx=12)
-        ttk.Label(bottom, text="Doppelklick auf eine Zeile: Details und Notiz",
+        ttk.Label(bottom,
+                  text="Doppelklick in die Spalte „Notiz“ bearbeitet sie · "
+                       "Doppelklick sonst zeigt Details",
                   foreground="#888888").pack(side="right")
 
     def _prefill_target(self) -> None:
@@ -269,6 +274,9 @@ class ScanApp:
         return report.sort_devices(devices, self._sort_column, self._sort_reverse)
 
     def _refresh_table(self) -> None:
+        if self._note_editor is not None:
+            editor, self._note_editor = self._note_editor, None
+            editor.destroy()
         self.tree.delete(*self.tree.get_children())
         devices = self._visible_devices()
         if not devices:
@@ -301,7 +309,7 @@ class ScanApp:
                 name or "-",
                 device.category + (" (?)" if device.confidence == "niedrig"
                                    and device.category != "Unbekannt" else ""),
-                device.note or "",
+                device.note or "+ Notiz",
                 portscan.format_ports(device.open_ports, True),
             ))
         self.count_label.configure(
@@ -315,6 +323,64 @@ class ScanApp:
             self._sort_column = column
             self._sort_reverse = False
         self._refresh_table()
+
+    def _on_double_click(self, event=None) -> None:
+        """Doppelklick in die Notizspalte bearbeitet sie, sonst öffnen sich Details."""
+        if event is not None:
+            column = self.tree.identify_column(event.x)
+            index = int(column[1:]) - 1 if column.startswith("#") else -1
+            if 0 <= index < len(COLUMNS) and COLUMNS[index][0] == "note":
+                self._edit_note()
+                return
+        self._show_details()
+
+    def _edit_note(self, _event=None) -> None:
+        """Notiz direkt in der Tabelle bearbeiten (Eingabefeld über der Zelle)."""
+        selection = self.tree.selection()
+        if not selection or selection[0] == "__hinweis__" or self._note_editor:
+            return
+        device = next((d for d in self.devices if d.ip == selection[0]), None)
+        if device is None:
+            return
+        column_index = next(i for i, (key, _t, _w) in enumerate(COLUMNS)
+                            if key == "note")
+        box = self.tree.bbox(selection[0], "#%d" % (column_index + 1))
+        if not box:                                   # Zeile nicht sichtbar
+            self.tree.see(selection[0])
+            box = self.tree.bbox(selection[0], "#%d" % (column_index + 1))
+            if not box:
+                return
+        x, y, width, height = box
+
+        editor = tk.Entry(self.tree)
+        self._note_editor = editor
+        editor.insert(0, device.note or "")
+        editor.select_range(0, "end")
+        editor.place(x=x, y=y, width=width, height=height)
+        editor.focus_set()
+
+        def schliessen(speichern: bool) -> None:
+            if self._note_editor is not editor:
+                return
+            text = editor.get()
+            self._note_editor = None
+            editor.destroy()
+            if speichern and text.strip() != (device.note or ""):
+                if notes.set_note(device.mac, device.ip, text, device.hostname):
+                    device.note = text.strip()
+                    self.status_var.set("Notiz gespeichert für %s." % device.ip)
+                else:
+                    messagebox.showerror(
+                        "Speichern fehlgeschlagen",
+                        "Die Notiz konnte nicht geschrieben werden:\n%s"
+                        % notes.notes_path())
+            self._refresh_table()
+            self.tree.selection_set(device.ip)
+
+        editor.bind("<Return>", lambda _e: schliessen(True))
+        editor.bind("<KP_Enter>", lambda _e: schliessen(True))
+        editor.bind("<Escape>", lambda _e: schliessen(False))
+        editor.bind("<FocusOut>", lambda _e: schliessen(True))
 
     def _show_details(self, _event=None) -> None:
         selection = self.tree.selection()
